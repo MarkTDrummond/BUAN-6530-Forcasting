@@ -1,0 +1,486 @@
+---
+title: "BUAN 6530 Business forecasting and predictive analytic"
+author: "Mark Drummond"
+date: "Fall 2020 - Final Projet"
+output:
+  pdf_document:
+  word_document:
+  html_document:
+     df_print: paged
+---
+
+```{r}
+library(fpp2)
+```
+
+```{r}
+# Display Working Directory and System Time
+getwd()
+Sys.time()
+```
+
+```{r}
+#You may run the code by deleting "#" below the 1st time if you cannot knit a pdf file
+#tinytex::install_tinytex()
+```
+
+```{r}
+#install.packages("tseries")
+#install.packages("quantmod")
+#install.packages("ggplot2")
+#install.packages("xlsx")
+#library(tseries)
+#library(quantmod)
+#library(ggplot2)
+#library(forecast)
+library(fma)
+library(Mcomp)
+library(smooth)
+ 
+```
+##  Load data from File
+### 
+### 
+
+```{r}
+# a
+# Monthly total Deaths from 1/1/1999 to 10/1/2020
+deathsx <- readxl::read_excel("Data Sets/ALL Deaths 1999 2020.xlsx") 
+
+```
+
+```{r}
+# b
+head(deathsx)
+
+plot(deathsx$MonthYear, deathsx$Deaths, col="blue", type = "l", lwd=1)
+
+```
+
+```{r}
+# Convert the data into time series
+# limit to before any Covid Deaths were reported
+death_ts <- ts(deathsx[,-1], start=1999,end=c(2020,2),  frequency=12)
+#death_ts <- ts(deathsx[,-1], frequency=12)
+#  Name death_ts[, ”Deaths”] as ‘death’
+deaths <- death_ts[, 'Deaths']
+
+```
+
+```{r}
+#head(deaths)
+#View(deaths)
+```
+
+```{r}
+# Plot ‘death’ and identify  any seasonal pattern and stationarity
+autoplot(deaths, xlab = 'Years', ylab = "Deaths")
+
+```
+
+```{r}
+# look at the seasonal plot
+ggseasonplot(deaths)
+
+```
+
+```{r}
+```
+
+
+```{r}
+# stationarity,ACF and PACF
+ggtsdisplay(deaths)
+
+# Add additional commentary here
+# The PACF plots show that there are significant lags at 1 and 13.
+# The AFC plot there is a geometric decay at each Lag. 
+# This would indicate that a seasonal AR model would be used
+
+```
+
+
+```{r}
+# Get Box Cov
+BoxCox.lambda(deaths)
+```
+  
+```{r}
+# For Non Seasonal
+ndiffs(BoxCox(deaths,lambda=0.250792))
+# = 1 so the model needs a non-Seasonal differencing of 1
+
+```
+
+
+```{r}
+# For Seasonal
+# Gives me d for the Arima Model
+# Difference once based on ndiff 
+nsdiffs(diff(BoxCox(deaths,lambda=0.250792),lag=12))
+# = 0 so no seasonality needed
+
+```
+
+```{r}
+ggtsdisplay(diff(deaths,lag=12))
+# Looks stationary now
+# The AFC plot there is a geometric decay 
+
+# The PACF plots show that there are significant lags at 1 then minor ones at 12,13,24,25.
+# This would indicate that a AR model with some seasonality should be used
+
+```
+
+```{r}
+#   Comments on the seasonality, stationarity, and possible forecasting strategies
+#   Appears to have yearly seasonality and a trend so you should take 1 difference 
+#   with the 1st difference then
+#   Looks to be following a ARIMA(1,d,q) since
+#   The spikes on in the ACF and PACF drops significantly after lag 12
+#   and most of the other spikes are with the blue lines in the ACF plot
+```
+
+
+# Section 2. Testing diffrent models 
+# 
+## Section 2.1 
+###  Simple Moving Averages (SMA)
+
+```{r}
+# a
+dea_sma1 <- sma(deaths,lambda=0.250792)
+dea_sma2 <- sma(deaths,order=12,lambda=0.250792)
+
+```
+
+```{r}
+# 
+# Summarize the sma models results and explain the parameters of the optimal model
+accuracy(dea_sma1$fitted,deaths)
+accuracy(dea_sma2$fitted,deaths)
+
+
+summary(dea_sma1)
+summary(dea_sma2)
+
+# MODEL1 HAVE THE lowest RSME 13252.08   vs 14255.52 
+checkresiduals(dea_sma1)
+# STILL SOME SPIKES outside the blue lines
+
+```
+
+
+```{r}
+###  Exponential Smoothing  (SES)
+#
+dea_ses1 <- ses(deaths, lambda=0.250792)
+dea_ses2 <- ses(deaths, lambda=0.250792,alpha=0.1)
+
+```
+
+```{r}
+# 
+accuracy(dea_ses1$fitted,deaths)
+#accuracy(dea_ses2$fitted,deaths)
+
+summary(dea_ses1)
+#print('####################')
+#summary(dea_ses2)
+  # BEST MODEL IS dea_ses1 with a RMSE 13246.03  vs 14611.42    
+checkresiduals(dea_ses1)
+
+```
+  
+```{r}
+# g
+# SES 1 is the best model with a RMSE = 13978.23
+#dea$ses_fit <- dea_ses1$fitted
+#head(dea)
+
+```
+
+## Section 2.2 - Simple Linear Regression
+#
+### Time Series with TREND
+## 
+
+
+```{r}
+#print('#################### With TREND #######################')
+# a
+deaths_tslm1 <- tslm(data=death_ts,deaths ~ trend )
+
+```
+
+```{r}
+# 
+summary(deaths_tslm1)
+accuracy(deaths_tslm1)
+# RMSE 14866.79  Trend t-value is 11.72 is above 2 and so a good for the model
+# Adjusted R-squared: 0.3052 
+# R-squared:  0.3456
+
+```
+
+### Time Series with TREND & SEASON
+## 
+
+```{r}
+#print('#################### With TREND & SEASON #######################')
+##
+deaths_tslm2 <- tslm(data=death_ts,Deaths ~ trend + season )
+
+```
+
+
+```{r}
+# 
+summary(deaths_tslm2)
+accuracy(deaths_tslm2)
+# Check the model
+checkresiduals(deaths_tslm2)
+# RMSE 9222.548   All of the seasons have t-values of above 2 which is good
+# Adjusted R-squared:  0.758 
+# R-squared:  0.8271
+
+```
+
+
+```{r}
+# 
+# With TREND and Season has the lowest Adjusted R-squared: 0.758, RMSE = 9222.548 
+# And of the seasons have t-values of above 2 
+# 
+#dea$tslm2_fit <-deaths_tslm2$fitted.values
+
+#head(dea) # to see if it works
+```
+
+## Section 2.3 - Holt, HW and ETS
+#
+### Holt's method 
+##
+
+```{r}
+# a - HOLT
+#print('#################### HOLT #######################')
+deaths_holt <- holt(deaths,lambda=0.250792)
+```
+
+```{r}
+# b
+summary(deaths_holt)
+accuracy(deaths_holt)
+
+# RMSE 13247.62 
+
+```
+
+
+#
+### Holt-Winters' additive method 
+
+```{r}
+# c  HW
+#print('#################### HW #######################')
+deaths_hw <- hw(deaths,seasonal="additive")
+```
+
+```{r}
+# d
+summary(deaths_hw)
+accuracy(deaths_hw)
+
+# RMSE  5186.121 
+
+```
+
+#
+### Holt-Winters' multiplicative method
+
+```{r}
+# multiplicative
+deaths_hw <- hw(deaths,seasonal="multiplicative")
+```
+
+```{r}
+# d
+summary(deaths_hw)
+accuracy(deaths_hw)
+
+# RMSE  5535.074  
+
+```
+
+
+
+### Exponential smoothing (ETS)
+#
+```{r}
+# e ets
+#print('#################### ETS #######################')
+deaths_ets <- ets(deaths)
+
+```
+
+```{r}
+# f
+summary(deaths_ets)
+accuracy(deaths_ets)
+
+# RMSE 5037.35 
+```
+
+```{r}
+# g
+# ETS had the lowest RSM value of 5037.35   
+#dea$ets_fit <- dea_ets$fitted
+#head(dea) # to see if it worked
+```
+
+
+
+## Section 2.4 - ARIMA MODELS
+###
+##
+
+```{r}
+BoxCox.lambda(deaths)
+```
+
+```{r}
+# For Non Seasonal
+ndiffs(BoxCox(deaths,lambda=0.250792))
+# Gives me d for the Arima Model
+# = 1 so the model needs a non-Seasonal differencing of 1
+
+```
+```{r}
+# For Seasonal
+# Gives me d for the Arima Model
+nsdiffs(diff(BoxCox(deaths,lambda=0.250792),lag=12))
+# = 0 so do not need to Seasonal differencing  of 1 after one Diff indicated in ndiff
+```
+
+```{r}
+# 
+#	The PACF plots show that there are significant lags at 1 then minor ones at 12,13,24,25. 
+#	The AFC plot there is a geometric decay at lag 12. This would indicate that a seasonal AR model should also be tried.
+
+ggtsdisplay(diff(BoxCox(deaths,lambda=0.250792),lag = 12))
+
+```
+
+
+### ARIMA Manual
+#
+```{r}
+# Manual ARIMA
+
+#dea_arima1 <- Arima(deaths, order = c(2,0,0),seasonal=c(2,1,1),lambda=0.250792)
+# AICc = 386.65  
+
+#dea_arima1 <- Arima(deaths, order = c(1,0,1),seasonal=c(2,1,1),lambda=0.250792)
+# AICc = 385.7
+
+#dea_arima1 <- Arima(deaths, order = c(2,0,2),seasonal=c(2,1,0),lambda=0.250792)
+# AICc = 382.31
+
+#dea_arima1 <- Arima(deaths, order = c(2,0,1),seasonal=c(1,1,1),lambda=0.250792)
+# AICc = 373.47
+
+#dea_arima1 <- Arima(deaths, order = c(2,0,2),seasonal=c(2,1,1),lambda=0.250792)
+# AICc = 369.15
+
+#dea_arima1 <- Arima(deaths, order = c(1,0,2),seasonal=c(2,1,2),lambda=0.250792)
+# AICc = 369.14   
+
+dea_arima1 <- Arima(deaths, order = c(2,0,2),seasonal=c(1,1,1),lambda=0.250792)
+# Best Model LOWEST AICc
+# AICC = 368.60
+# RMSE = 4787.379
+
+summary(dea_arima1)
+checkresiduals(dea_arima1)
+
+```   
+
+### AUTO ARIMA
+#
+
+```{r}
+# AUTO ARIMA
+aarima <- auto.arima(deaths , lambda=0.250792)
+summary(aarima)
+
+# AICc = 369.15   
+# RMSE = 4914.212   
+# Not better that the manual 
+```
+
+```{r}
+# f The auto Arima Model had a RMSE value of 1.587109    
+#   The Arima Model of order = c(0,1,0),seasonal=c(1,1,0) has a RMSE = 49.51 
+#   They match
+
+# Check the 
+checkresiduals(aarima)
+
+```
+## Section 3 - Forecast Best Model
+#
+### ARIMA
+##
+```{r}
+# g
+# Manual Arima model has the lowest RSM value of 44.3173
+#deaths$arima1_fit <- dea_arima1$fitted
+
+#head(deaths) # to see if it worked
+#head(dea_arima1$fitted)
+autoplot(forecast(dea_arima1))
+forecast(dea_arima1)
+forecast(dea_arima1$fitted)
+
+
+```
+```{r}
+#deathForAct <- readxl::read_excel("Data Sets/ALL Deaths 1999 2020.xlsx") 
+deathForAct <- readxl::read_excel("Data Sets/FinalProjet Forcast Vs Actual-Mark Drummond.xlsx")
+```
+
+```{r}
+# DEATHS with ACTUALS
+death_tsAA <- ts(deathsx[,-1], frequency=12)
+deathsAAA <- death_tsAA[, 'Deaths']
+#View(deathsAAA)
+
+```
+
+```{r}
+ggplot(data = deathForAct, aes(x=Month, y=Hi.95)) + geom_line(aes(colour=Actual))
+```
+
+```{r}
+#Plot Actuals
+plot(deathForAct$Month, deathForAct$Actual ,col="blue", type="l"  ,xlab="Date", ylab="Deaths", main="Actual vs Forecasted Deaths", ylim=c(200000,310000))
+points(deathForAct$Month, deathForAct$Hi.95, col="red", type="l")
+legend("topright", c("Actual", "Forecast"), col = c("blue", "red"),
+       text.col = "black", lty = c(1, 1), pch = c("-","-"),
+       merge = TRUE, bg = "gray90")
+
+
+```
+
+
+
+```{r}
+# Write out forcast into ‘examreview-your-name.csv’ file
+write.csv(forecast(dea_arima1$fitted),"Data Sets/FinalProjetForecast-Mark Drummond.csv")
+
+```
+
+
+
+
